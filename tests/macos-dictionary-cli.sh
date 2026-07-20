@@ -6,7 +6,8 @@ repository=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 temporary=$(mktemp -d "${TMPDIR:-/tmp}/macos-dictionary.XXXXXX")
 trap 'rm -rf "$temporary"' EXIT HUP INT TERM
 
-clang -O2 -framework CoreServices -framework Foundation \
+clang -O2 -Wall -Wextra -Werror \
+  -framework CoreServices -framework Foundation \
   "$repository/macos-dictionary.m" \
   -o "$temporary/macos-dictionary-cli"
 
