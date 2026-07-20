@@ -26,6 +26,7 @@
 (require 'json)
 (require 'shr)
 (require 'subr-x)
+(require 'url-parse)
 (require 'url-util)
 
 (defgroup macos-dictionary nil
@@ -77,6 +78,7 @@
     (define-key map (kbd "s") #'macos-dictionary-search-input)
     (define-key map (kbd "o") #'macos-dictionary-open-in-dictionary)
     (define-key map (kbd "r") #'macos-dictionary-read-word)
+    (define-key map (kbd "w") #'macos-dictionary-view-in-webkit)
     map)
   "Keymap for `macos-dictionary-mode'.")
 
@@ -87,8 +89,11 @@
   "Major mode for definitions returned by macOS Dictionary Services."
   (visual-line-mode 1)
   (setq-local browse-url-handlers
-              (cons '("\\`x-dictionary:d:" . macos-dictionary--browse-url)
-                    browse-url-handlers)))
+              (append
+               '(("\\`x-dictionary:d:" . macos-dictionary--browse-url)
+                 ("\\`file:.*\\.\\(?:mp3\\|m4a\\|wav\\|aiff?\\)"
+                  . macos-dictionary--play-audio))
+               browse-url-handlers)))
 
 (defun macos-dictionary-open-in-dictionary ()
   "Open the current word in Dictionary.app."
@@ -188,14 +193,80 @@
   "Return the active macOS dictionaries as a list of alists."
   (macos-dictionary--run-cli "--list"))
 
+(defun macos-dictionary--dom-class-p (node class)
+  "Return non-nil when DOM NODE has CLASS."
+  (and (consp node)
+       (member class (split-string (or (dom-attr node 'class) "")))))
+
+(defun macos-dictionary--dom-has-class-p (node class)
+  "Return non-nil when DOM NODE or a descendant has CLASS."
+  (and (consp node)
+       (or (macos-dictionary--dom-class-p node class)
+           (cl-some (lambda (child)
+                      (macos-dictionary--dom-has-class-p child class))
+                    (dom-children node)))))
+
+(defun macos-dictionary--explicit-numbered-list-p (node)
+  "Return non-nil when DOM NODE supplies its own item numbers."
+  (when (and (consp node) (eq (dom-tag node) 'ol))
+    (let ((items
+           (cl-remove-if-not
+            (lambda (child)
+              (and (consp child) (eq (dom-tag child) 'li)))
+            (dom-children node))))
+      (and items
+           (cl-every (lambda (item)
+                       (macos-dictionary--dom-has-class-p item "num"))
+                     items)))))
+
+(defun macos-dictionary--normalize-dom (node &optional parent-tag)
+  "Normalize Dictionary XHTML DOM NODE for `shr'.
+PARENT-TAG is the tag containing NODE."
+  (cond
+   ((not (consp node)) node)
+   ((and (eq parent-tag 'd:entry)
+         (eq (dom-tag node) 'h1)
+         (not (dom-attr node 'class)))
+    nil)
+   ((and (eq (dom-tag node) 'img)
+         (string-match-p
+          "\\.play[[:space:]]*("
+          (or (dom-attr node 'onmousedown) "")))
+    nil)
+   (t
+    (let* ((tag (dom-tag node))
+           (attributes (dom-attributes node))
+           (explicit-numbering
+            (macos-dictionary--explicit-numbered-list-p node))
+           (children
+            (delq
+             nil
+             (mapcar
+              (lambda (child)
+                (let ((normalized
+                       (macos-dictionary--normalize-dom child tag)))
+                  (if (and explicit-numbering
+                           (consp normalized)
+                           (eq (dom-tag normalized) 'li))
+                      (cons 'div (cdr normalized))
+                    normalized)))
+              (dom-children node)))))
+      (cons (if explicit-numbering 'div tag)
+            (cons attributes children))))))
+
 (defun macos-dictionary--insert-html (html)
   "Render HTML at point using Emacs's simple HTML renderer."
   (let ((start (point))
         (shr-use-colors t)
         (shr-use-fonts t)
         (shr-inhibit-images nil))
-    (insert html)
-    (shr-render-region start (point))))
+    (shr-insert-document
+     (macos-dictionary--normalize-dom
+      (with-temp-buffer
+        (insert html)
+        (libxml-parse-html-region (point-min) (point-max)))))
+    (add-text-properties
+     start (point) `(macos-dictionary-html ,html))))
 
 (defun macos-dictionary--insert-result (result)
   "Insert a parsed dictionary RESULT at point."
@@ -264,6 +335,55 @@
   (macos-dictionary-search
    (url-unhex-string
     (string-remove-prefix "x-dictionary:d:" url))))
+
+(defun macos-dictionary--play-audio (url &rest _arguments)
+  "Play the local audio file at URL."
+  (let* ((parsed-url (url-generic-parse-url url))
+         (file (url-unhex-string (url-filename parsed-url))))
+    (unless (and (equal (url-type parsed-url) "file")
+                 (file-readable-p file))
+      (user-error "Audio file is not readable: %s" url))
+    (start-process "macos-dictionary-audio" nil "afplay" file)))
+
+(defvar-local macos-dictionary--webkit-temp-file nil
+  "Temporary XHTML file displayed by the current WebKit buffer.")
+
+(defun macos-dictionary--delete-webkit-temp-file ()
+  "Delete the XHTML file associated with the current WebKit buffer."
+  (when (and macos-dictionary--webkit-temp-file
+             (file-exists-p macos-dictionary--webkit-temp-file))
+    (delete-file macos-dictionary--webkit-temp-file)))
+
+(defun macos-dictionary--browse-html-in-webkit (html)
+  "Display HTML in a new WebKit session."
+  (unless (fboundp 'xwidget-webkit-browse-url)
+    (user-error "This Emacs was not built with WebKit support"))
+  (let ((file (make-temp-file "macos-dictionary-" nil ".html"))
+        opened)
+    (unwind-protect
+        (progn
+          (with-temp-file file
+            (insert html))
+          (xwidget-webkit-browse-url (browse-url-file-url file) t)
+          (setq-local macos-dictionary--webkit-temp-file file)
+          (add-hook 'kill-buffer-hook
+                    #'macos-dictionary--delete-webkit-temp-file nil t)
+          (setq opened t))
+      (unless opened
+        (when (file-exists-p file)
+          (delete-file file))))))
+
+(defun macos-dictionary-view-in-webkit ()
+  "Display the dictionary entry at point in WebKit."
+  (interactive)
+  (let ((html
+         (or (get-text-property (point) 'macos-dictionary-html)
+             (and (> (point) (point-min))
+                  (get-text-property (1- (point))
+                                     'macos-dictionary-html)))))
+    (unless html
+      (user-error "No dictionary entry at point"))
+    (macos-dictionary--browse-html-in-webkit html)))
 
 (defun macos-dictionary--region-or-word ()
   "Return the active region or the word at point."

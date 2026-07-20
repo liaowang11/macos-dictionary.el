@@ -18,17 +18,23 @@ to use Apple's current platform name and to distinguish the fork's API.
 | Rendering | Inserts a lossy native text conversion | Renders semantic XHTML with Emacs's native `shr` renderer |
 | Rich content | Formatting and structure are discarded | Preserves supported headings, emphasis, lists, tables, links, images, and pronunciation resources |
 | Dictionary links | Not interactive | Opens `x-dictionary:` links in the same Emacs interface |
+| Pronunciation audio | Not interactive | Plays local dictionary audio with `afplay` |
+| Full-fidelity view | Not available | Opens the entry at point in WebKit when Emacs has xwidget support |
 | Native-to-Emacs transport | Ad hoc formatted text | Structured JSON containing dictionaries and entries |
 | Native helper | Built manually | Compiled automatically on first use and after source changes |
 | Test coverage | None | Native integration tests and ERT rendering tests |
 
 The renderer preserves the semantic content that `shr` supports. It does not
-attempt to reproduce Dictionary.app's complete WebKit CSS and layout.
+attempt to reproduce Dictionary.app's complete WebKit CSS and layout. Before
+rendering, it removes presentation artifacts caused by CSS and JavaScript that
+`shr` cannot apply, such as hidden metadata headings, duplicate list numbers,
+and redundant speaker images.
 
 ## Requirements
 
 - macOS with Dictionary.app
 - Emacs 27.1 or newer, built with libxml2
+- Emacs built with xwidget support for the optional WebKit view
 - Clang and the macOS CoreServices and Foundation frameworks
 - `jq` when running the native integration test
 
@@ -71,7 +77,11 @@ Inside a definition buffer:
 - `s` prompts for another word.
 - `o` opens the current word in Dictionary.app.
 - `r` reads the current word with the macOS `say` command.
+- `w` opens the entry at point in WebKit.
 - `q` closes the buffer and restores the previous window configuration.
+
+Press `RET` or click a rendered `[audio]` link to play that dictionary's
+recorded pronunciation with `afplay`.
 
 Set `macos-dictionary-use-chinese-text-segmentation` to non-nil to use the
 optional [`chinese-word-at-point`](https://github.com/xuchunyang/chinese-word-at-point.el)
