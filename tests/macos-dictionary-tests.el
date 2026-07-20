@@ -63,6 +63,17 @@
         (browse-url "x-dictionary:d:back%20up")))
     (should (equal searched-word "back up"))))
 
+(ert-deftest macos-dictionary-mode-shows-key-hints-in-the-header-line ()
+  (with-temp-buffer
+    (macos-dictionary-mode)
+    (should header-line-format)
+    (should (equal header-line-format
+                   macos-dictionary-mode-header-line-format))
+    (should (cl-find-if
+             (lambda (item)
+               (and (stringp item) (string-prefix-p ": WebKit" item)))
+             header-line-format))))
+
 (ert-deftest macos-dictionary-audio-links-use-the-audio-handler ()
   (with-temp-buffer
     (macos-dictionary-mode)

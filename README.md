@@ -74,6 +74,9 @@ Example configuration:
 
 Inside a definition buffer:
 
+The header line displays the available one-key commands. Set
+`macos-dictionary-mode-header-line-format` to nil to hide it.
+
 - `s` prompts for another word.
 - `o` opens the current word in Dictionary.app.
 - `r` reads the current word with the macOS `say` command.

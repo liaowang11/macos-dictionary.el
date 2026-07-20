@@ -49,6 +49,22 @@
   :type 'string
   :group 'macos-dictionary)
 
+(defcustom macos-dictionary-mode-header-line-format
+  '((:propertize "s" face mode-line-buffer-id)
+    ": Search Word    "
+    (:propertize "o" face mode-line-buffer-id)
+    ": Dictionary.app    "
+    (:propertize "r" face mode-line-buffer-id)
+    ": Read Word    "
+    (:propertize "w" face mode-line-buffer-id)
+    ": WebKit    "
+    (:propertize "q" face mode-line-buffer-id)
+    ": Quit")
+  "Header line displayed in `macos-dictionary-mode' buffers.
+Set this to nil to hide the header line."
+  :type '(choice (const :tag "No header line" nil) sexp)
+  :group 'macos-dictionary)
+
 (defconst macos-dictionary-cli "macos-dictionary-cli"
   "Executable compiled from macos-dictionary.m.")
 
@@ -88,6 +104,8 @@
 (define-derived-mode macos-dictionary-mode special-mode "macos-dictionary"
   "Major mode for definitions returned by macOS Dictionary Services."
   (visual-line-mode 1)
+  (setq-local header-line-format
+              macos-dictionary-mode-header-line-format)
   (setq-local browse-url-handlers
               (append
                '(("\\`x-dictionary:d:" . macos-dictionary--browse-url)
