@@ -1,34 +1,61 @@
 # macos-dictionary.el
 
-`macos-dictionary.el` looks up words in every active dictionary configured in
-macOS Dictionary.app and renders the definitions in Emacs.
+Look up words from macOS Dictionary.app without leaving Emacs.
 
-Definitions are fetched as XHTML, preserving headings, emphasis, lists, tables,
-links, images, and pronunciation resources that Emacs's `shr` renderer supports.
-Dictionary links open the linked definition in the same Emacs interface.
+This project is a fork of Xuchun Yang's
+[`osx-dictionary.el`](https://github.com/xuchunyang/osx-dictionary.el). It keeps
+the original package's simple Emacs interface while replacing its dictionary
+lookup and rendering pipeline. The package was renamed to `macos-dictionary`
+to use Apple's current platform name and to distinguish the fork's API.
+
+## What's new in this fork
+
+| Capability | Upstream `osx-dictionary.el` | This fork |
+| --- | --- | --- |
+| Dictionary coverage | Searches only the default dictionary | Searches every dictionary enabled in Dictionary.app |
+| Result coverage | Returns one incomplete, plain-text-oriented result | Returns every exact matching entry, grouped by dictionary |
+| Dictionary data | Requests Dictionary Services representation 3 | Requests representation 1 XHTML, as used by Raycast's Define Word command |
+| Rendering | Inserts a lossy native text conversion | Renders semantic XHTML with Emacs's native `shr` renderer |
+| Rich content | Formatting and structure are discarded | Preserves supported headings, emphasis, lists, tables, links, images, and pronunciation resources |
+| Dictionary links | Not interactive | Opens `x-dictionary:` links in the same Emacs interface |
+| Native-to-Emacs transport | Ad hoc formatted text | Structured JSON containing dictionaries and entries |
+| Native helper | Built manually | Compiled automatically on first use and after source changes |
+| Test coverage | None | Native integration tests and ERT rendering tests |
+
+The renderer preserves the semantic content that `shr` supports. It does not
+attempt to reproduce Dictionary.app's complete WebKit CSS and layout.
 
 ## Requirements
 
 - macOS with Dictionary.app
 - Emacs 27.1 or newer, built with libxml2
 - Clang and the macOS CoreServices and Foundation frameworks
-- `jq` for the command-line integration test
+- `jq` when running the native integration test
+
+The package uses private Dictionary Services functions from CoreServices.
+Apple does not provide compatibility guarantees for these functions, so future
+macOS releases may require changes.
 
 ## Installation
 
-Add this repository to `load-path`, then load the package:
+Clone the repository and add it to `load-path`, then load the package:
 
 ```elisp
+(add-to-list 'load-path "/path/to/macos-dictionary.el")
 (require 'macos-dictionary)
 ```
 
 The native `macos-dictionary-cli` helper is compiled automatically when first
 needed and whenever `macos-dictionary.m` is newer than the executable.
 
+This fork deliberately uses new `macos-dictionary-*` names and does not provide
+compatibility aliases for the upstream `osx-dictionary-*` API.
+
 ## Usage
 
-- `macos-dictionary-search-word-at-point` looks up the region or word at point.
-- `macos-dictionary-search-input` prompts for a word.
+- `M-x macos-dictionary-search-word-at-point` looks up the active region or the
+  word at point.
+- `M-x macos-dictionary-search-input` prompts for a word.
 - `macos-dictionary-search` looks up a word supplied by Lisp.
 - `macos-dictionary-list-dictionaries` returns the active dictionaries.
 
@@ -39,12 +66,20 @@ Example configuration:
 (global-set-key (kbd "C-c i") #'macos-dictionary-search-input)
 ```
 
+Inside a definition buffer:
+
+- `s` prompts for another word.
+- `o` opens the current word in Dictionary.app.
+- `r` reads the current word with the macOS `say` command.
+- `q` closes the buffer and restores the previous window configuration.
+
 Set `macos-dictionary-use-chinese-text-segmentation` to non-nil to use the
-optional `chinese-word-at-point` package when choosing a word at point.
+optional [`chinese-word-at-point`](https://github.com/xuchunyang/chinese-word-at-point.el)
+package when choosing a word at point.
 
 ## Tests
 
-Run the native integration test on macOS:
+Run the native end-to-end integration test on macOS:
 
 ```sh
 tests/macos-dictionary-cli.sh
@@ -53,12 +88,13 @@ tests/macos-dictionary-cli.sh
 Load `tests/macos-dictionary-tests.el` and run the `macos-dictionary-` ERT tests
 through an Emacs instance built with libxml2.
 
-## Implementation notes
+## How it works
 
-The package uses private Dictionary Services functions from CoreServices. These
-functions are not covered by Apple's public compatibility guarantees and may
-change in future macOS releases.
+The native helper asks Dictionary Services for all active dictionaries, finds
+exact case-insensitive matches, and returns representation-1 XHTML records as
+structured JSON. Emacs renders each record separately so its `<base>` URL can
+resolve relative links and media resources.
 
-The native helper returns structured JSON. Each matching active dictionary has
-its own name and list of representation-1 XHTML records. Emacs renders each
-record independently so its `<base>` URL applies to relative media resources.
+This design is informed by reverse engineering Raycast's Define Word command,
+which also queries active Dictionary Services dictionaries and requests record
+representation 1.
