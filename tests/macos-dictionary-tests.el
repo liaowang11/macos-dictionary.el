@@ -63,6 +63,66 @@
         (browse-url "x-dictionary:d:back%20up")))
     (should (equal searched-word "back up"))))
 
+(ert-deftest macos-dictionary-links-drop-the-dictionary-segment ()
+  (let (searched-word)
+    (cl-letf (((symbol-function 'macos-dictionary-search)
+               (lambda (word) (setq searched-word word))))
+      (with-temp-buffer
+        (macos-dictionary-mode)
+        (browse-url "x-dictionary:d:contractor:com.apple.dictionary.Noad")))
+    (should (equal searched-word "contractor"))))
+
+(ert-deftest macos-dictionary-history-push-records-visits ()
+  (with-temp-buffer
+    (macos-dictionary-mode)
+    (macos-dictionary--push-history "cat")
+    (macos-dictionary--push-history "dog")
+    (should (equal macos-dictionary--history '("cat" "dog")))
+    (should (eq macos-dictionary--history-index 1))))
+
+(ert-deftest macos-dictionary-history-move-navigates-back-and-forward ()
+  (with-temp-buffer
+    (macos-dictionary-mode)
+    (macos-dictionary--push-history "cat")
+    (macos-dictionary--push-history "dog")
+    (macos-dictionary--push-history "bird")
+    (should (equal (macos-dictionary--history-move -1) "dog"))
+    (should (eq macos-dictionary--history-index 1))
+    (should (equal (macos-dictionary--history-move -1) "cat"))
+    (should (null (macos-dictionary--history-move -1)))
+    (should (equal (macos-dictionary--history-move 1) "dog"))
+    (should (equal (macos-dictionary--history-move 1) "bird"))
+    (should (null (macos-dictionary--history-move 1)))))
+
+(ert-deftest macos-dictionary-history-push-truncates-the-forward-tail ()
+  (with-temp-buffer
+    (macos-dictionary-mode)
+    (macos-dictionary--push-history "cat")
+    (macos-dictionary--push-history "dog")
+    (macos-dictionary--push-history "bird")
+    (macos-dictionary--history-move -1)
+    (macos-dictionary--push-history "fish")
+    (should (equal macos-dictionary--history '("cat" "dog" "fish")))
+    (should (eq macos-dictionary--history-index 2))
+    (should (null (macos-dictionary--history-move 1)))))
+
+(ert-deftest macos-dictionary-history-back-renders-the-previous-word ()
+  (let ((buffer-name " *macos-dictionary-history-back-test*"))
+    (unwind-protect
+        (cl-letf (((symbol-function 'macos-dictionary--lookup)
+                   (lambda (word) `((word . ,word) (dictionaries)))))
+          (let ((macos-dictionary-generate-buffer-name-function
+                 (lambda (_word) buffer-name)))
+            (save-window-excursion
+              (macos-dictionary-search "cat")
+              (macos-dictionary-search "dog"))
+            (with-current-buffer buffer-name
+              (should (equal macos-dictionary-current-word "dog"))
+              (macos-dictionary-history-back)
+              (should (equal macos-dictionary-current-word "cat")))))
+      (when (get-buffer buffer-name)
+        (kill-buffer buffer-name)))))
+
 (ert-deftest macos-dictionary-mode-shows-key-hints-in-the-header-line ()
   (with-temp-buffer
     (macos-dictionary-mode)

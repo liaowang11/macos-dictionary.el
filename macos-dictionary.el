@@ -101,6 +101,12 @@ Set this to nil to hide the header line."
 (defvar macos-dictionary-previous-window-configuration nil
   "Window configuration from before displaying a definition.")
 
+(defvar-local macos-dictionary--history nil
+  "Words visited in this buffer, oldest first.")
+
+(defvar-local macos-dictionary--history-index 0
+  "Index into `macos-dictionary--history' of the word shown now.")
+
 (define-derived-mode macos-dictionary-mode special-mode "macos-dictionary"
   "Major mode for definitions returned by macOS Dictionary Services."
   (visual-line-mode 1)
@@ -317,15 +323,68 @@ PARENT-TAG is the tag containing NODE."
     (append-to-file
      (concat word "\n") nil
      (expand-file-name macos-dictionary-search-log-file)))
-  (let ((result (macos-dictionary--lookup word))
-        (buffer (macos-dictionary--get-buffer word)))
+  (let ((buffer (macos-dictionary--get-buffer word)))
+    (macos-dictionary--render-into buffer word)
+    (with-current-buffer buffer
+      (macos-dictionary--push-history word))
+    (macos-dictionary--display-buffer buffer)))
+
+(defun macos-dictionary--render-into (buffer word)
+  "Look up WORD and render its definitions into BUFFER."
+  (let ((result (macos-dictionary--lookup word)))
     (with-current-buffer buffer
       (let ((inhibit-read-only t))
         (erase-buffer)
         (setq macos-dictionary-current-word word)
         (macos-dictionary--insert-result result)
-        (goto-char (point-min))))
-    (macos-dictionary--display-buffer buffer)))
+        (goto-char (point-min))))))
+
+(defun macos-dictionary--push-history (word)
+  "Record WORD as a new visit in this buffer.
+Do nothing when WORD is the word already shown.  Words visited
+after the current position are discarded, as in a web browser."
+  (cond
+   ((null macos-dictionary--history)
+    (setq macos-dictionary--history (list word)
+          macos-dictionary--history-index 0))
+   ((equal word (nth macos-dictionary--history-index
+                     macos-dictionary--history))
+    nil)
+   (t
+    (let ((kept (cl-subseq macos-dictionary--history
+                           0 (1+ macos-dictionary--history-index))))
+      (setq macos-dictionary--history (append kept (list word))
+            macos-dictionary--history-index
+            (1- (length macos-dictionary--history)))))))
+
+(defun macos-dictionary--history-move (delta)
+  "Move the history position by DELTA and return the word now shown.
+Return nil when there is no word in that direction."
+  (if (null macos-dictionary--history)
+      nil
+    (let* ((last (1- (length macos-dictionary--history)))
+           (next (max 0 (min last (+ macos-dictionary--history-index delta)))))
+      (if (= next macos-dictionary--history-index)
+          nil
+        (setq macos-dictionary--history-index next)
+        (nth next macos-dictionary--history)))))
+
+(defun macos-dictionary-history-back ()
+  "Show the previously visited word in this dictionary buffer."
+  (interactive)
+  (macos-dictionary--history-navigate -1))
+
+(defun macos-dictionary-history-forward ()
+  "Show the next visited word in this dictionary buffer."
+  (interactive)
+  (macos-dictionary--history-navigate 1))
+
+(defun macos-dictionary--history-navigate (delta)
+  "Re-render the word DELTA steps away in history."
+  (if-let* ((word (macos-dictionary--history-move delta)))
+      (macos-dictionary--render-into (current-buffer) word)
+    (message "No %s dictionary history"
+             (if (< delta 0) "earlier" "later"))))
 
 ;;;###autoload
 (defun macos-dictionary-search-input ()
@@ -349,10 +408,16 @@ PARENT-TAG is the tag containing NODE."
   #'macos-dictionary-search-pointer)
 
 (defun macos-dictionary--browse-url (url &rest _arguments)
-  "Look up the dictionary term encoded in URL."
-  (macos-dictionary-search
-   (url-unhex-string
-    (string-remove-prefix "x-dictionary:d:" url))))
+  "Look up the dictionary term encoded in URL.
+
+The `x-dictionary:d:' scheme links the headword to either the
+bare term or a term followed by a dictionary bundle id
+(`x-dictionary:d:WORD:BUNDLE_ID'); the bundle id selects a source
+in Dictionary.app and is not part of the search term."
+  (let ((body (string-remove-prefix "x-dictionary:d:" url)))
+    (macos-dictionary-search
+     (url-unhex-string
+      (car (split-string body ":"))))))
 
 (defun macos-dictionary--play-audio (url &rest _arguments)
   "Play the local audio file at URL."
