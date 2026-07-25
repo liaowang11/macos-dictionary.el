@@ -77,6 +77,9 @@ Set this to nil to hide the header line."
 (defvar-local macos-dictionary-current-word nil
   "Word displayed in the current dictionary buffer.")
 
+(defvar-local macos-dictionary--lookup-process nil
+  "Asynchronous lookup process for the current dictionary buffer.")
+
 (defun macos-dictionary-generate-buffer-name-default-function (_word)
   "Return the default dictionary buffer name."
   macos-dictionary-buffer-name)
@@ -110,6 +113,7 @@ Set this to nil to hide the header line."
 (define-derived-mode macos-dictionary-mode special-mode "macos-dictionary"
   "Major mode for definitions returned by macOS Dictionary Services."
   (visual-line-mode 1)
+  (add-hook 'kill-buffer-hook #'macos-dictionary--cancel-lookup nil t)
   (setq-local header-line-format
               macos-dictionary-mode-header-line-format)
   (setq-local browse-url-handlers
@@ -212,6 +216,49 @@ Set this to nil to hide the header line."
 (defun macos-dictionary--lookup (word)
   "Return structured definitions for WORD."
   (macos-dictionary--run-cli word))
+
+(defun macos-dictionary--lookup-async (word callback)
+  "Look up WORD asynchronously, then call CALLBACK.
+CALLBACK receives the process, parsed result, and error message.
+Exactly one of the result and error arguments is non-nil."
+  (let* ((executable (macos-dictionary-cli-find-or-recompile))
+         (output-buffer
+          (generate-new-buffer " *macos-dictionary-cli*")))
+    (make-process
+     :name "macos-dictionary-lookup"
+     :buffer output-buffer
+     :command (list executable word)
+     :connection-type 'pipe
+     :noquery t
+     :sentinel
+     (lambda (process event)
+       (when (memq (process-status process) '(exit signal))
+         (unwind-protect
+             (if (and (eq (process-status process) 'exit)
+                      (zerop (process-exit-status process)))
+                 (let (result parse-error)
+                   (condition-case error
+                       (setq result
+                             (with-current-buffer (process-buffer process)
+                               (goto-char (point-min))
+                               (json-parse-buffer
+                                :object-type 'alist
+                                :array-type 'list
+                                :null-object nil
+                                :false-object nil)))
+                     (error
+                      (setq parse-error (error-message-string error))))
+                   (funcall callback process result parse-error))
+               (let ((output
+                      (with-current-buffer (process-buffer process)
+                        (string-trim (buffer-string)))))
+                 (funcall
+                  callback process nil
+                  (if (string-empty-p output)
+                      (string-trim event)
+                    output))))
+           (when (buffer-live-p (process-buffer process))
+             (kill-buffer (process-buffer process)))))))))
 
 (defun macos-dictionary-list-dictionaries ()
   "Return the active macOS dictionaries as a list of alists."
@@ -331,13 +378,41 @@ PARENT-TAG is the tag containing NODE."
 
 (defun macos-dictionary--render-into (buffer word)
   "Look up WORD and render its definitions into BUFFER."
-  (let ((result (macos-dictionary--lookup word)))
+  (with-current-buffer buffer
+    (macos-dictionary--cancel-lookup)
+    (let ((inhibit-read-only t))
+      (erase-buffer)
+      (setq macos-dictionary-current-word word)
+      (insert (format "Looking up “%s”…\n" word))
+      (goto-char (point-min))))
+  (let ((process
+         (macos-dictionary--lookup-async
+          word
+          (lambda (process result error)
+            (macos-dictionary--finish-render
+             buffer process result error)))))
     (with-current-buffer buffer
-      (let ((inhibit-read-only t))
-        (erase-buffer)
-        (setq macos-dictionary-current-word word)
-        (macos-dictionary--insert-result result)
-        (goto-char (point-min))))))
+      (setq macos-dictionary--lookup-process process))))
+
+(defun macos-dictionary--finish-render (buffer process result error)
+  "Render RESULT or ERROR in BUFFER if PROCESS is its active lookup."
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (when (eq process macos-dictionary--lookup-process)
+        (setq macos-dictionary--lookup-process nil)
+        (let ((inhibit-read-only t))
+          (erase-buffer)
+          (if error
+              (insert (format "Dictionary lookup failed: %s\n" error))
+            (macos-dictionary--insert-result result))
+          (goto-char (point-min)))))))
+
+(defun macos-dictionary--cancel-lookup ()
+  "Cancel the current buffer's asynchronous dictionary lookup."
+  (let ((process macos-dictionary--lookup-process))
+    (setq macos-dictionary--lookup-process nil)
+    (when (and (processp process) (process-live-p process))
+      (delete-process process))))
 
 (defun macos-dictionary--push-history (word)
   "Record WORD as a new visit in this buffer.

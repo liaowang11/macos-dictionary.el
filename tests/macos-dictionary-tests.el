@@ -33,14 +33,19 @@
    "</div></d:entry></body></html>"))
 
 (ert-deftest macos-dictionary-search-renders-all-rich-definitions ()
-  (let ((buffer-name " *macos-dictionary-test*"))
+  (let ((buffer-name " *macos-dictionary-test*")
+        completion)
     (unwind-protect
-        (cl-letf (((symbol-function 'macos-dictionary--lookup)
-                   (lambda (_word) macos-dictionary-test--result)))
+        (cl-letf (((symbol-function 'macos-dictionary--lookup-async)
+                   (lambda (_word callback)
+                     (setq completion callback)
+                     'lookup-process)))
           (let ((macos-dictionary-generate-buffer-name-function
                  (lambda (_word) buffer-name)))
             (save-window-excursion
               (macos-dictionary-search "run"))
+            (funcall completion
+                     'lookup-process macos-dictionary-test--result nil)
             (with-current-buffer buffer-name
               (goto-char (point-min))
               (should (search-forward "First Dictionary" nil t))
@@ -53,6 +58,54 @@
                              "x-dictionary:d:sprint")))))
       (when (get-buffer buffer-name)
         (kill-buffer buffer-name)))))
+
+(ert-deftest macos-dictionary-search-renders-after-async-lookup ()
+  (let ((buffer-name " *macos-dictionary-async-test*")
+        completion)
+    (unwind-protect
+        (cl-letf (((symbol-function 'macos-dictionary--lookup)
+                   (lambda (_word)
+                     (error "Synchronous lookup called")))
+                  ((symbol-function 'macos-dictionary--lookup-async)
+                   (lambda (_word callback)
+                     (setq completion callback)
+                     'lookup-process)))
+          (let ((macos-dictionary-generate-buffer-name-function
+                 (lambda (_word) buffer-name)))
+            (save-window-excursion
+              (macos-dictionary-search "run"))
+            (with-current-buffer buffer-name
+              (should (equal macos-dictionary-current-word "run"))
+              (should (equal (buffer-string) "Looking up “run”…\n")))
+            (should completion)
+            (funcall completion
+                     'lookup-process macos-dictionary-test--result nil)
+            (with-current-buffer buffer-name
+              (goto-char (point-min))
+              (should (search-forward "First Dictionary" nil t)))))
+      (when (get-buffer buffer-name)
+        (kill-buffer buffer-name)))))
+
+(ert-deftest macos-dictionary-async-lookup-parses-process-output ()
+  (let (completion process)
+    (unwind-protect
+        (cl-letf (((symbol-function
+                    'macos-dictionary-cli-find-or-recompile)
+                   (lambda () "/bin/echo")))
+          (setq process
+                (macos-dictionary--lookup-async
+                 "{\"word\":\"echo\",\"dictionaries\":[]}"
+                 (lambda (_process result error)
+                   (setq completion (list result error)))))
+          (let ((deadline (+ (float-time) 2)))
+            (while (and (null completion)
+                        (< (float-time) deadline))
+              (accept-process-output process 0.05)))
+          (should completion)
+          (should-not (cadr completion))
+          (should (equal (alist-get 'word (car completion)) "echo")))
+      (when (and (processp process) (process-live-p process))
+        (delete-process process)))))
 
 (ert-deftest macos-dictionary-links-search-for-the-linked-term ()
   (let (searched-word)
@@ -107,19 +160,33 @@
     (should (null (macos-dictionary--history-move 1)))))
 
 (ert-deftest macos-dictionary-history-back-renders-the-previous-word ()
-  (let ((buffer-name " *macos-dictionary-history-back-test*"))
+  (let ((buffer-name " *macos-dictionary-history-back-test*")
+        completion
+        lookup-token)
     (unwind-protect
-        (cl-letf (((symbol-function 'macos-dictionary--lookup)
-                   (lambda (word) `((word . ,word) (dictionaries)))))
+        (cl-letf (((symbol-function 'macos-dictionary--lookup-async)
+                   (lambda (_word callback)
+                     (setq completion callback
+                           lookup-token (1+ (or lookup-token 0)))
+                     lookup-token)))
           (let ((macos-dictionary-generate-buffer-name-function
                  (lambda (_word) buffer-name)))
             (save-window-excursion
-              (macos-dictionary-search "cat")
+              (macos-dictionary-search "cat"))
+            (funcall completion lookup-token
+                     '((word . "cat") (dictionaries)) nil)
+            (save-window-excursion
               (macos-dictionary-search "dog"))
+            (funcall completion lookup-token
+                     '((word . "dog") (dictionaries)) nil)
             (with-current-buffer buffer-name
               (should (equal macos-dictionary-current-word "dog"))
               (macos-dictionary-history-back)
-              (should (equal macos-dictionary-current-word "cat")))))
+              (should (equal macos-dictionary-current-word "cat")))
+            (funcall completion lookup-token
+                     '((word . "cat") (dictionaries)) nil)
+            (with-current-buffer buffer-name
+              (should (equal (buffer-string) "No definition found.\n")))))
       (when (get-buffer buffer-name)
         (kill-buffer buffer-name)))))
 

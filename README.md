@@ -65,6 +65,9 @@ compatibility aliases for the upstream `osx-dictionary-*` API.
 - `macos-dictionary-search` looks up a word supplied by Lisp.
 - `macos-dictionary-list-dictionaries` returns the active dictionaries.
 
+Lookups run asynchronously.  The result buffer appears immediately with a
+loading message, and starting another lookup there cancels the previous one.
+
 Example configuration:
 
 ```elisp
