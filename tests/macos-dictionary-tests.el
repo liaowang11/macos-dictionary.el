@@ -32,6 +32,68 @@
    "<li><span class=\"num\">2</span> second meaning</li></ol>"
    "</div></d:entry></body></html>"))
 
+(defconst macos-dictionary-test--mw-lettered-html
+  (concat
+   "<html><body>"
+   "<div class=\"try-header\"><h1 class=\"hword\">premium</h1> "
+   "<sup>1</sup><span class=\"fl\">noun</span></div> "
+   "<div class=\"npf\"><div class=\"hfv\"><div class=\"rhj\">"
+   "<ol class=\"lvc\">"
+   "<li><span class=\"num\">1</span>"
+   "<div class=\"def-item\">"
+   "<span class=\"letter\">a</span>"
+   "<span class=\"block\"> <span class=\"gmb\">:</span> "
+   "a reward or recompense for a particular act</span>"
+   "<span class=\"letter\">b</span>"
+   "<span class=\"block\"> <span class=\"gmb\">:</span> "
+   "a sum over and above a regular price paid chiefly as an inducement or incentive</span>"
+   "<span class=\"letter\">c</span>"
+   "<span class=\"block\"> <span class=\"gmb\">:</span> "
+   "a sum in advance of or in addition to the nominal value of something "
+   "<span class=\"ex-sent\">bonds callable at a <i>premium</i> of six percent</span></span>"
+   "</div></li>"
+   "<li><span class=\"num\">2</span>"
+   "<div class=\"def-item\"><span class=\"block\"> "
+   "<span class=\"gmb\">:</span> the consideration paid for a contract of insurance"
+   "</span></div></li>"
+   "</ol></div></div></div>"
+   "</body></html>")
+  "Merriam-Webster lettered sub-sense markup.")
+
+(ert-deftest macos-dictionary-search-renders-lettered-sub-senses ()
+  (let ((buffer-name " *macos-dictionary-test-mw*")
+        completion)
+    (unwind-protect
+        (cl-letf (((symbol-function 'macos-dictionary--lookup-async)
+                   (lambda (_word callback)
+                     (setq completion callback)
+                     'lookup-process)))
+          (let ((macos-dictionary-generate-buffer-name-function
+                 (lambda (_word) buffer-name)))
+            (save-window-excursion
+              (macos-dictionary-search "premium"))
+            (funcall completion
+                     'lookup-process
+                     `((word . "premium")
+                       (dictionaries
+                        . (((name . "Merriam-Webster's Dictionary")
+                            (shortName . "MW")
+                            (entries
+                             . (((headword . "premium")
+                                 (html . ,macos-dictionary-test--mw-lettered-html))))))))
+                     nil)
+            (with-current-buffer buffer-name
+              ;; Letters are on dedicated lines to read as a list.
+              (should (= 1 (how-many "^a : a reward" (point-min) (point-max))))
+              (should (= 1 (how-many "^b : a sum over" (point-min) (point-max))))
+              (should (= 1 (how-many "^c : a sum in advance"
+                                     (point-min) (point-max))))
+              ;; Other spans still render inline.
+              (should (= 1 (how-many "the consideration paid for a contract"
+                                     (point-min) (point-max)))))))
+      (when (get-buffer buffer-name)
+        (kill-buffer buffer-name)))))
+
 (ert-deftest macos-dictionary-search-renders-all-rich-definitions ()
   (let ((buffer-name " *macos-dictionary-test*")
         completion)

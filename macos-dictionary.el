@@ -325,12 +325,27 @@ PARENT-TAG is the tag containing NODE."
       (cons (if explicit-numbering 'div tag)
             (cons attributes children))))))
 
+(defun macos-dictionary--render-span (dom)
+  "Render span DOM, starting Merriam-Webster lettered sub-senses on new lines.
+Merriam-Webster marks sub-senses with inline <span class=\"letter\">s,
+which shr otherwise concatenates into one long line."
+  (if (not (member "letter" (split-string (or (dom-attr dom 'class) ""))))
+      (shr-generic dom)
+    (unless (zerop (current-column))
+      (insert "\n"))
+    ;; Drop any surrounding <li> continuation indentation so the
+    ;; lettered list starts at the left margin.
+    (let ((shr-indentation 0))
+      (shr-generic dom))))
+
 (defun macos-dictionary--insert-html (html)
   "Render HTML at point using Emacs's simple HTML renderer."
   (let ((start (point))
         (shr-use-colors t)
         (shr-use-fonts t)
-        (shr-inhibit-images nil))
+        (shr-inhibit-images nil)
+        (shr-external-rendering-functions
+         '((span . macos-dictionary--render-span))))
     (shr-insert-document
      (macos-dictionary--normalize-dom
       (with-temp-buffer
