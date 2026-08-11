@@ -98,6 +98,8 @@ Set this to nil to hide the header line."
     (define-key map (kbd "o") #'macos-dictionary-open-in-dictionary)
     (define-key map (kbd "r") #'macos-dictionary-read-word)
     (define-key map (kbd "w") #'macos-dictionary-view-in-webkit)
+    (define-key map (kbd "TAB") #'shr-next-link)
+    (define-key map (kbd "<backtab>") #'shr-previous-link)
     map)
   "Keymap for `macos-dictionary-mode'.")
 

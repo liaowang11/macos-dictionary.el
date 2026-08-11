@@ -60,6 +60,13 @@
    "</body></html>")
   "Merriam-Webster lettered sub-sense markup.")
 
+(defconst macos-dictionary-test--links-html
+  (concat
+   "<html><body><p>see "
+   "<a href=\"x-dictionary:d:one\">one</a> and "
+   "<a href=\"x-dictionary:d:two\">two</a>.</p></body></html>")
+  "Entry markup containing two dictionary links.")
+
 (ert-deftest macos-dictionary-search-renders-lettered-sub-senses ()
   (let ((buffer-name " *macos-dictionary-test-mw*")
         completion)
@@ -251,6 +258,30 @@
               (should (equal (buffer-string) "No definition found.\n")))))
       (when (get-buffer buffer-name)
         (kill-buffer buffer-name)))))
+
+(defun macos-dictionary-test--insert-links ()
+  "Render `macos-dictionary-test--links-html' in the current buffer."
+  (macos-dictionary-mode)
+  (let ((inhibit-read-only t))
+    (macos-dictionary--insert-html macos-dictionary-test--links-html)))
+
+(ert-deftest macos-dictionary-tab-moves-to-the-next-link ()
+  (with-temp-buffer
+    (macos-dictionary-test--insert-links)
+    (goto-char (point-min))
+    (call-interactively (key-binding (kbd "TAB")))
+    (should (equal (get-text-property (point) 'shr-url) "x-dictionary:d:one"))
+    (call-interactively (key-binding (kbd "TAB")))
+    (should (equal (get-text-property (point) 'shr-url) "x-dictionary:d:two"))))
+
+(ert-deftest macos-dictionary-backtab-moves-to-the-previous-link ()
+  (with-temp-buffer
+    (macos-dictionary-test--insert-links)
+    (goto-char (point-max))
+    (call-interactively (key-binding (kbd "<backtab>")))
+    (should (equal (get-text-property (point) 'shr-url) "x-dictionary:d:two"))
+    (call-interactively (key-binding (kbd "<backtab>")))
+    (should (equal (get-text-property (point) 'shr-url) "x-dictionary:d:one"))))
 
 (ert-deftest macos-dictionary-mode-shows-key-hints-in-the-header-line ()
   (with-temp-buffer

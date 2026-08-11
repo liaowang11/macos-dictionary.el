@@ -85,6 +85,8 @@ The header line displays the available one-key commands. Set
 - `r` reads the current word with the macOS `say` command.
 - `w` opens the entry at point in WebKit.
 - `q` closes the buffer and restores the previous window configuration.
+- `TAB` moves point to the next link, `S-TAB` to the previous one. Neither
+  wraps around at the end of the buffer.
 
 Press `RET` or click a rendered `[audio]` link to play that dictionary's
 recorded pronunciation with `afplay`.
