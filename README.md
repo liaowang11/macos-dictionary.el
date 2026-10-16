@@ -77,7 +77,8 @@ Example configuration:
 
 Inside a definition buffer:
 
-The header line displays the available one-key commands. Set
+The header line displays the current word and the available one-key
+commands. Set
 `macos-dictionary-mode-header-line-format` to nil to hide it.
 
 - `s` prompts for another word.

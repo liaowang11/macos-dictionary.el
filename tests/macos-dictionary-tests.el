@@ -294,6 +294,21 @@
                (and (stringp item) (string-prefix-p ": WebKit" item)))
              header-line-format))))
 
+(ert-deftest macos-dictionary-header-line-shows-the-current-word ()
+  (with-temp-buffer
+    (macos-dictionary-mode)
+    (should-not (string-match-p
+                 "premium"
+                 (format-mode-line header-line-format nil nil
+                                   (current-buffer))))
+    (cl-letf (((symbol-function 'macos-dictionary--lookup-async)
+               (lambda (_word _callback) 'lookup-process)))
+      (macos-dictionary--render-into (current-buffer) "100%premium"))
+    (should (string-prefix-p
+             "100%premium"
+             (format-mode-line header-line-format nil nil
+                               (current-buffer))))))
+
 (ert-deftest macos-dictionary-audio-links-use-the-audio-handler ()
   (with-temp-buffer
     (macos-dictionary-mode)

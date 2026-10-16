@@ -50,7 +50,9 @@
   :group 'macos-dictionary)
 
 (defcustom macos-dictionary-mode-header-line-format
-  '((:propertize "s" face mode-line-buffer-id)
+  '((macos-dictionary-current-word
+     ((:propertize macos-dictionary-current-word face bold) "    "))
+    (:propertize "s" face mode-line-buffer-id)
     ": Search Word    "
     (:propertize "o" face mode-line-buffer-id)
     ": Dictionary.app    "
@@ -61,6 +63,7 @@
     (:propertize "q" face mode-line-buffer-id)
     ": Quit")
   "Header line displayed in `macos-dictionary-mode' buffers.
+The default shows the current word followed by key hints.
 Set this to nil to hide the header line."
   :type '(choice (const :tag "No header line" nil) sexp)
   :group 'macos-dictionary)
