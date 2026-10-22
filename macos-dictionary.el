@@ -106,9 +106,6 @@ Set this to nil to hide the header line."
     map)
   "Keymap for `macos-dictionary-mode'.")
 
-(defvar macos-dictionary-previous-window-configuration nil
-  "Window configuration from before displaying a definition.")
-
 (defvar-local macos-dictionary--history nil
   "Words visited in this buffer, oldest first.")
 
@@ -145,14 +142,12 @@ Set this to nil to hide the header line."
                  "say" macos-dictionary-current-word))
 
 (defun macos-dictionary-quit ()
-  "Restore the previous window configuration and bury this buffer."
+  "Bury this buffer and return to the most recently used window."
   (interactive)
-  (when (window-configuration-p
-         macos-dictionary-previous-window-configuration)
-    (set-window-configuration
-     macos-dictionary-previous-window-configuration)
-    (setq macos-dictionary-previous-window-configuration nil))
-  (bury-buffer))
+  (let ((window (get-mru-window nil nil (selected-window))))
+    (quit-window)
+    (when (window-live-p window)
+      (select-window window))))
 
 (defun macos-dictionary--get-buffer (word)
   "Return the dictionary result buffer for WORD."
@@ -165,9 +160,7 @@ Set this to nil to hide the header line."
     buffer))
 
 (defun macos-dictionary--display-buffer (buffer)
-  "Display BUFFER while remembering the current window configuration."
-  (setq macos-dictionary-previous-window-configuration
-        (current-window-configuration))
+  "Display BUFFER in another window, or select it if already shown."
   (let ((window (get-buffer-window buffer)))
     (if window
         (select-window window)

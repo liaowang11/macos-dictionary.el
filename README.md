@@ -85,7 +85,7 @@ commands. Set
 - `o` opens the current word in Dictionary.app.
 - `r` reads the current word with the macOS `say` command.
 - `w` opens the entry at point in WebKit.
-- `q` closes the buffer and restores the previous window configuration.
+- `q` closes the buffer and returns to the most recently used window.
 - `TAB` moves point to the next link, `S-TAB` to the previous one. Neither
   wraps around at the end of the buffer.
 
