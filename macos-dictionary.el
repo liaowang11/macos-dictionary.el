@@ -144,7 +144,7 @@ Set this to nil to hide the header line."
 (defun macos-dictionary-quit ()
   "Bury this buffer and return to the most recently used window."
   (interactive)
-  (let ((window (get-mru-window nil nil (selected-window))))
+  (let ((window (get-mru-window nil t (selected-window))))
     (quit-window)
     (when (window-live-p window)
       (select-window window))))
